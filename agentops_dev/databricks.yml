@@ -1,0 +1,90 @@
+# The name of the bundle. run `databricks bundle schema` to see the full bundle settings schema.
+bundle:
+  name: agentops_dev
+
+variables:
+  uc_catalog:
+    description: Unity Catalog used to store data and artifacts.
+    default: ai_agent_stacks
+  schema:
+    description: "Schema in Unity Catalog."
+  raw_data_table:
+    description: "Table in Unity Catalog to store raw data."
+    default: raw_documentation
+  data_source_url: 
+      description: "The url to scrape."
+      default: https://docs.databricks.com/en/doc-sitemap.xml
+  preprocessed_data_table:
+      description: "Table in Unity Catalog to store preprocessed data."
+      default: databricks_documentation
+  vector_search_endpoint:
+    description: "Vector Search endpoint to create."
+    default: ai_agent_endpoint
+  vector_search_index:
+    description: "Vector Search index to populate."
+    default: databricks_documentation_vs_index
+  experiment:
+    description: "Experiment to log run under."
+    default: /Workspace/Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}-agent_function_chatbot
+  registered_model:
+    description: "Name of agent model to register."
+    default: agent_function_chatbot
+  agent_serving_endpoint:
+    description: "Name of agent model serving endpoint."
+    default: chatbot_model_serving_endpoint
+  foundation_model_endpoint:
+    description: "Foundation model endpoint to use for agent."
+    default: "databricks-meta-llama-3-3-70b-instruct"
+  eval_table:
+    description: "Table in Unity Catalog to store evaluation data."
+    default: "databricks_documentation_eval"
+  model_alias:
+    description: "Model alias to use for trained model"
+    default: agent_latest
+  scale_to_zero:
+    description: "Scale model endpoint to zero when not in use."
+    default: True
+  workload_size:
+    description: "Size of compute for anticipated number of concurrent requests."
+    default: "Small"
+  app_name:
+    description: "Name of the Databricks App"
+    default: "agentops-dev-chatbot-app"
+
+include:
+  # Resources folder contains Agent artifact resources for the Agent project that defines the agent
+  # and workflows resources for data preparation -> agent creation & evaluation -> deployment
+  - ./resources/data-preparation-resource.yml
+  - ./resources/agents-artifacts-resource.yml
+  - ./resources/agent-resource.yml
+  - ./resources/app-deployment-resource.yml
+  # Uncomment this when you want to deploy monitoring
+  # - ./resources/monitoring-resource.yml
+
+# Deployment Target specific values for workspace
+targets:
+  dev:
+    default: true
+    variables:
+      schema: "agentops_dev"
+    workspace:
+      # TODO: add dev workspace URL
+      host: https://adb-984752964297111.11.azuredatabricks.net/
+
+  staging:
+    variables:
+      schema: "agentops_staging"
+    workspace:
+      host: https://adb-xxxx.xx.azuredatabricks.net
+
+  prod:
+    variables:
+      schema: "agentops_prod"
+    workspace:
+      host: https://adb-xxxx.xx.azuredatabricks.net
+
+  test: 
+    variables:
+      schema: "agentops_staging"
+    workspace:
+      host: https://adb-xxxx.xx.azuredatabricks.net

@@ -1,0 +1,10 @@
+{
+  "input_root_dir": "agentops_dev",
+  "input_cloud": "azure",
+  "input_cicd_platform": "github_actions",
+  "input_default_branch": "main",
+  "input_release_branch": "release",
+  "cloud_specific_node_type_id": "v0.266.0",
+  "input_cli_version": "v0.266.0",
+  "input_docker_image": "databricksfieldeng/mlopsstacks:latest"
+}

@@ -1,0 +1,29 @@
+# ModelConfig.yml
+# Configuration file for the agent model at serving time
+# This file is loaded by app.py when the model is served via MLflow
+
+# Unity Catalog configuration
+catalog: ai_agent_stacks
+schema: ai_agent_ops
+
+# Vector Search configuration
+vector_search_config:
+  embedding_model_name: databricks-bge-large-en
+  num_results: 1
+  columns:
+    - url
+    - content
+  query_type: ANN
+
+# LLM/Foundation Model configuration
+llm_config:
+  endpoint: databricks-meta-llama-3-3-70b-instruct
+  temperature: 0.1
+  max_tokens: 500
+
+# Agent behavior configuration
+agent_config:
+  max_words: 20
+
+# System prompt for the agent
+system_prompt: "You are a Databricks expert."
