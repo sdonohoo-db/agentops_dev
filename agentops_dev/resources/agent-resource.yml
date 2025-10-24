@@ -7,9 +7,6 @@ common_permissions: &permissions
 resources:
   jobs:
     agent_development_job:
-      parameters:
-        - name: bundle_root
-          default: ${workspace.file_path}
       name: ${bundle.target}-agentops_dev-agent-development-job
       tasks:
         - task_key: AgentDevelopment
@@ -24,7 +21,6 @@ resources:
               registered_model: ${var.registered_model}
               foundation_model_endpoint: ${var.foundation_model_endpoint}
               model_alias: ${var.model_alias}
-              bundle_root: ${workspace.file_path}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: agent_requirements
@@ -41,7 +37,6 @@ resources:
               registered_model: ${var.registered_model}
               eval_table: ${var.eval_table}
               model_alias: ${var.model_alias}
-              bundle_root: ${workspace.file_path}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: agent_requirements
@@ -58,7 +53,6 @@ resources:
               model_alias: ${var.model_alias}
               scale_to_zero: ${var.scale_to_zero}
               workload_size: ${var.workload_size}
-              bundle_root: ${workspace.file_path}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: agent_requirements

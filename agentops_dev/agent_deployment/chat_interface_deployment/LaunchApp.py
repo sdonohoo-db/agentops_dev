@@ -121,7 +121,7 @@ except:
 # MAGIC         try:
 # MAGIC             print('Initializing WorkspaceClient...')
 # MAGIC             self.w = WorkspaceClient()
-# MAGIC             print('WorkspaceClient initialized successfully')
+# MAGIC             print('WorkspaceClient initialized')
 # MAGIC         except Exception as e:
 # MAGIC             print(f'Error initializing WorkspaceClient: {str(e)}')
 # MAGIC             self.w = None
@@ -235,7 +235,7 @@ except:
 # MAGIC                 max_tokens=max_tokens
 # MAGIC             )
 # MAGIC             message = response.choices[0].message.content
-# MAGIC             print('Model endpoint called successfully')
+# MAGIC             print('Model endpoint called')
 # MAGIC             return message
 # MAGIC         except Exception as e:
 # MAGIC             print(f'Error calling model endpoint: {str(e)}')

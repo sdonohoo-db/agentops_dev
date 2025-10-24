@@ -6,24 +6,23 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Vector Search Pipeline - Overview
 ################################################################################### 
 # Vector Search
 #
 # This notebook creates a Vector Search index from a table containing chunked documents.
 #
 # Parameters:
-# * uc_catalog (required)                     - Name of the Unity Catalog 
-# * schema (required)                         - Name of the schema inside Unity Catalog 
+# * uc_catalog (required)                     - Name of the Unity Catalog
+# * schema (required)                         - Name of the schema inside Unity Catalog
 # * preprocessed_data_table (required)        - Name of the preprocessed data table inside database of Unity Catalog
 # * vector_search_endpoint (required)         - Name of the Vector Search endpoint
-# * bundle_root (required)                    - Root of the bundle
 #
 # Widgets:
 # * Vector Search endpoint: Text widget to input the name of the Vector Search endpoint
 # * Unity Catalog: Text widget to input the name of the Unity Catalog
 # * Schema: Text widget to input the name of the database inside the Unity Catalog
 # * Preprocessed data table: Text widget to input the name of the preprocessed data table inside the database of Unity Catalog
-# * Root of bundle: Text widget to input the root of the bundle
 #
 # Usage:
 # 1. Set the appropriate values for the widgets.
@@ -34,16 +33,13 @@
 
 # COMMAND ----------
 
-# Install prerequisite pacakges
+# DBTITLE 1,Install Prerequisites
+# Install prerequisite packages
 %pip install -r ../../data_prep_requirements.txt
 
 # COMMAND ----------
 
-# Set up path to import utility and other helper functions
-# Path setup is done after bundle_root is retrieved from widgets
-
-# COMMAND ----------
-
+# DBTITLE 1,Widget Creation
 # List of input args needed to run this notebook as a job.
 # Provide them via DB widgets or notebook arguments in your DAB resources.
 
@@ -71,12 +67,6 @@ dbutils.widgets.text(
     "ai_agent_endpoint",
     label="Vector Search endpoint",
 )
-# Bundle root
-dbutils.widgets.text(
-    "bundle_root",
-    "/Workspace/",
-    label="Root of bundle",
-)
 
 
 # COMMAND ----------
@@ -86,23 +76,32 @@ vector_search_endpoint = dbutils.widgets.get("vector_search_endpoint")
 uc_catalog = dbutils.widgets.get("uc_catalog")
 schema = dbutils.widgets.get("schema")
 preprocessed_data_table = dbutils.widgets.get("preprocessed_data_table")
-bundle_root = dbutils.widgets.get("bundle_root")
 
 assert vector_search_endpoint != "", "vector_search_endpoint notebook parameter must be specified"
 assert uc_catalog != "", "uc_catalog notebook parameter must be specified"
 assert schema != "", "schema notebook parameter must be specified"
 assert preprocessed_data_table != "", "preprocessed_data_table notebook parameter must be specified"
-assert bundle_root != "", "bundle_root notebook parameter must be specified"
 
-# Updating to bundle root
+# COMMAND ----------
+
+# DBTITLE 1,Set up path to import utility functions
 import sys
-sys.path.append(bundle_root)
+import os
+
+# Get notebook's directory using dbutils
+notebook_path = '/Workspace/' + os.path.dirname(
+    dbutils.notebook.entry_point.getDbutils().notebook()
+    .getContext().notebookPath().get()
+)
+# Navigate up from notebooks/ to component level
+utils_dir = os.path.dirname(notebook_path)
+sys.path.insert(0, utils_dir)
 
 # COMMAND ----------
 
 # DBTITLE 1,Initialize endpoint
 from databricks.vector_search.client import VectorSearchClient
-from data_preparation.vector_search.utils.utils import vs_endpoint_exists, wait_for_vs_endpoint_to_be_ready
+from utils.vector_search_utils import vs_endpoint_exists, wait_for_vs_endpoint_to_be_ready
 
 vsc = VectorSearchClient(disable_notice=True)
 
@@ -116,7 +115,7 @@ print(f"Endpoint named {vector_search_endpoint} is ready.")
 # COMMAND ----------
 
 # DBTITLE 1,Create Index
-from data_preparation.vector_search.utils.utils import index_exists, wait_for_index_to_be_ready
+from utils.vector_search_utils import index_exists, wait_for_index_to_be_ready
 from databricks.sdk import WorkspaceClient
 import databricks.sdk.service.catalog as c
 
@@ -148,9 +147,9 @@ print(f"Index {vs_index_fullname} on table {source_table_fullname} is ready")
 # COMMAND ----------
 
 # DBTITLE 1,Test if Index Online
-import databricks 
+import databricks
 import time
-from data_preparation.vector_search.utils.utils import check_index_online
+from utils.vector_search_utils import check_index_online
 
 vector_index=vsc.get_index(endpoint_name=vector_search_endpoint, index_name=vs_index_fullname)
 

@@ -7,9 +7,6 @@ common_permissions: &permissions
 resources:
   jobs:
     data_preprocessing_job:
-      parameters:
-        - name: bundle_root
-          default: ${workspace.file_path}
       name: ${bundle.target}-agentops_dev-data-preprocessing-job
       tasks:
         - task_key: RawDataIngest
@@ -21,7 +18,6 @@ resources:
               schema: ${var.schema}
               raw_data_table: ${var.raw_data_table}
               data_source_url: ${var.data_source_url}
-              bundle_root: ${workspace.file_path}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: data_prep_requirements
@@ -37,7 +33,6 @@ resources:
               schema: ${var.schema}
               raw_data_table: ${var.raw_data_table}
               preprocessed_data_table: ${var.preprocessed_data_table}
-              bundle_root: ${workspace.file_path}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: data_prep_requirements
@@ -53,7 +48,6 @@ resources:
               schema: ${var.schema}
               preprocessed_data_table: ${var.preprocessed_data_table}
               vector_search_endpoint: ${var.vector_search_endpoint}
-              bundle_root: ${workspace.file_path}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: data_prep_requirements
