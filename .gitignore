@@ -13,4 +13,7 @@ venv
 *.egg-info/
 build
 dist
+# Development documentation (not for repo)
 CLAUDE.md
+CHANGELOG.md
+devdocs/

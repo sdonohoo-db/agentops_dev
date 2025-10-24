@@ -6,6 +6,7 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Model Serving Pipeline - Overview
 ##################################################################################
 # Model Serving
 # 
@@ -14,15 +15,14 @@
 # on an endpoint stage after transitioning the latest version.
 #
 # Parameters:
-# * uc_catalog (required)                   - Name of the Unity Catalog 
-# * schema (required)                       - Name of the schema inside Unity Catalog 
+# * uc_catalog (required)                   - Name of the Unity Catalog
+# * schema (required)                       - Name of the schema inside Unity Catalog
 # * registered_model (required)             - Name of the model registered in mlflow
 # * model_alias (required)                  - Model alias to deploy
 # * scale_to_zero (required)                - Specify if the endpoint should scale to zero when not in use.
-# * workload_size (required)                - Specify  the size of the compute scale out that corresponds with the number of requests this served 
+# * workload_size (required)                - Specify  the size of the compute scale out that corresponds with the number of requests this served
 #                                             model can process at the same time. This number should be roughly equal to QPS x model run time.
 # * agent_serving_endpoint (required)       - Name of the agent serving endpoint to deploy
-# * bundle_root (required)                  - Root of the bundle
 #
 # Widgets:
 # * Unity Catalog: Text widget to input the name of the Unity Catalog
@@ -32,7 +32,6 @@
 # * Scale to zero: Whether the clusters should scale to zero (requiring more time at startup after inactivity)
 # * Workload Size: Compute that matches estimated number of requests for the endpoint
 # * Agent model serving endpoint: Text widget to input the name of the model serving endpoint to deploy
-# * Bundle root: Text widget to input the root of the bundle
 #
 # Usage:
 # 1. Set the appropriate values for the widgets.
@@ -43,16 +42,13 @@
 
 # COMMAND ----------
 
-# Install prerequisite pacakges
+# DBTITLE 1,Install Prerequisites
+# Install prerequisite packages
 %pip install -r ../../../agent_development/agent_requirements.txt
 
 # COMMAND ----------
 
-# Set up path to import utility and other helper functions
-# Path setup is done after bundle_root is retrieved from widgets
-
-# COMMAND ----------
-
+# DBTITLE 1,Widget Creation
 # List of input args needed to run the notebook as a job.
 # Provide them via DB widgets or notebook arguments.
 
@@ -90,19 +86,15 @@ dbutils.widgets.text(
     "chatbot_model_serving_endpoint",
     label="Agent serving endpoint",
 )
-# Bundle root
-dbutils.widgets.text(
-    "bundle_root",
-    "/Workspace/",
-    label="Root of bundle",
-)
 
 # COMMAND ----------
 
+# DBTITLE 1,Restart Python
 dbutils.library.restartPython()
 
 # COMMAND ----------
 
+# DBTITLE 1,Define Input Variables
 uc_catalog = dbutils.widgets.get("uc_catalog")
 schema = dbutils.widgets.get("schema")
 registered_model = dbutils.widgets.get("registered_model")
@@ -110,7 +102,6 @@ model_alias = dbutils.widgets.get("model_alias")
 scale_to_zero = bool(dbutils.widgets.get("scale_to_zero"))
 workload_size = dbutils.widgets.get("workload_size")
 agent_serving_endpoint = dbutils.widgets.get("agent_serving_endpoint")
-bundle_root = dbutils.widgets.get("bundle_root")
 
 assert uc_catalog != "", "uc_catalog notebook parameter must be specified"
 assert schema != "", "schema notebook parameter must be specified"
@@ -119,11 +110,21 @@ assert model_alias != "", "model_alias notebook parameter must be specified"
 assert scale_to_zero != "", "scale_to_zero notebook parameter must be specified"
 assert workload_size != "", "workload_size notebook parameter must be specified"
 assert agent_serving_endpoint != "", "agent_serving_endpoint notebook parameter must be specified"
-assert bundle_root != "", "bundle_root notebook parameter must be specified"
 
-# Updating to bundle root
+# COMMAND ----------
+
+# DBTITLE 1,Set up path to import utility functions
 import sys
-sys.path.append(bundle_root)
+import os
+
+# Get notebook's directory using dbutils
+notebook_path = '/Workspace/' + os.path.dirname(
+    dbutils.notebook.entry_point.getDbutils().notebook()
+    .getContext().notebookPath().get()
+)
+# Navigate up from notebooks/ to component level
+utils_dir = os.path.dirname(notebook_path)
+sys.path.insert(0, utils_dir)
 
 # COMMAND ----------
 # DBTITLE 1,Review Instructions
@@ -145,7 +146,7 @@ Your inputs are invaluable for the development team. By providing detailed feedb
 Thank you for your time and effort in testing our assistant. Your contributions are essential to delivering a high-quality product to our end users."""
 
 # COMMAND ----------
-# DBTITLE 1,Create agent deployment
+# DBTITLE 1,Deploy Agent
 
 from databricks import agents
 from mlflow import MlflowClient
@@ -155,49 +156,25 @@ client = MlflowClient()
 model_name = f"{uc_catalog}.{schema}.{registered_model}"
 model_version = client.get_model_version_by_alias(model_name, model_alias).version
 
-# Deploy the agent
-try:
-    deployment_info = agents.deploy(
+# Deploy the agent (only if not already deployed)
+if len(agents.get_deployments(model_name=model_name, model_version=int(model_version))) == 0:
+    agents.deploy(
         model_name=model_name,
         model_version=int(model_version),
-        scale_to_zero=scale_to_zero,
-        workload_size=workload_size,
         endpoint_name=agent_serving_endpoint
     )
+    print(f"Deployed model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
+else:
+    print(f"Model {model_name} version {model_version} already deployed")
 
-    if deployment_info is None:
-        # If deployment returns None, try to get the existing endpoint
-        from databricks.sdk import WorkspaceClient
-        w = WorkspaceClient()
-        endpoint = w.serving_endpoints.get(agent_serving_endpoint)
-
-        # Create a mock deployment_info object with the endpoint name
-        class DeploymentInfo:
-            def __init__(self, endpoint_name):
-                self.endpoint_name = endpoint_name
-
-        deployment_info = DeploymentInfo(agent_serving_endpoint)
-        print(f"Using existing endpoint: {agent_serving_endpoint}")
-
-    # Add the user-facing instructions to the Review App
-    agents.set_review_instructions(model_name, instructions_to_reviewer)
-
-except Exception as e:
-    print(f"Deployment encountered an issue: {e}")
-    # Create a fallback deployment_info
-    class DeploymentInfo:
-        def __init__(self, endpoint_name):
-            self.endpoint_name = endpoint_name
-
-    deployment_info = DeploymentInfo(agent_serving_endpoint)
-    print(f"Using endpoint name: {agent_serving_endpoint}")
+# Set review instructions
+agents.set_review_instructions(model_name, instructions_to_reviewer)
 
 # COMMAND ----------
-# DBTITLE 1, Wait for model serving endpoint to be ready
+# DBTITLE 1,Wait for Endpoint to be Ready
 
-# DBTITLE 1,Test Endpoint
-from agent_deployment.model_serving.utils import wait_for_model_serving_endpoint_to_be_ready
-wait_for_model_serving_endpoint_to_be_ready(deployment_info.endpoint_name)
+from utils import wait_for_model_serving_endpoint_to_be_ready
+wait_for_model_serving_endpoint_to_be_ready(agent_serving_endpoint)
 
 # COMMAND ----------
 
@@ -212,7 +189,7 @@ wait_for_model_serving_endpoint_to_be_ready(deployment_info.endpoint_name)
 # print(f"Share this URL with your stakeholders: {deployment_info.review_app_url}")
 
 # COMMAND ----------
-# DBTITLE 1,Test endpoint
+# DBTITLE 1,Test Endpoint
 
 from mlflow.deployments import get_deploy_client
 
@@ -222,7 +199,7 @@ input_example = {
     "databricks_options": {"return_trace": True},
 }
 
-response = client.predict(endpoint=deployment_info.endpoint_name, inputs=input_example)
+response = client.predict(endpoint=agent_serving_endpoint, inputs=input_example)
 
 print(response['output'])
 

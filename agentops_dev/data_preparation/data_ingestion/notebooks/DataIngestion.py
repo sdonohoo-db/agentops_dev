@@ -6,10 +6,11 @@
 
 # COMMAND ----------
 
-################################################################################### 
+# DBTITLE 1,Data Ingestion Pipeline - Overview
+###################################################################################
 # Data Ingestion Pipeline
 #
-# This pipeline is designed to process raw documentation data from a specified data source URL. 
+# This pipeline is designed to process raw documentation data from a specified data source URL.
 # The data is stored in a Unity Catalog within a specified database for later processing.
 #
 # Parameters:
@@ -17,14 +18,12 @@
 # * schema (required)                         - Name of the schema inside the Unity Catalog
 # * raw_data_table (required)                 - Name of the raw data table inside the database of the Unity Catalog
 # * data_source_url (required)                - URL of the data source. Default is "https://docs.databricks.com/en/doc-sitemap.xml"
-# * bundle_root (required)                    - Root of the bundle
 #
 # Widgets:
 # * Unity Catalog: Text widget to input the name of the Unity Catalog
 # * Schema: Text widget to input the name of the database inside the Unity Catalog
 # * Raw data table: Text widget to input the name of the raw data table inside the database of the Unity Catalog
 # * Data Source URL: Text widget to input the URL of the data source
-# * Root of bundle: Text widget to input the root of the bundle
 #
 # Usage:
 # 1. Set the appropriate values for the widgets.
@@ -34,13 +33,9 @@
 
 # COMMAND ----------
 
-# Install prerequisite pacakges
+# DBTITLE 1,Install Prerequisites
+# Install prerequisite packages
 %pip install -r ../../data_prep_requirements.txt
-
-# COMMAND ----------
-
-# Set up path to import utility and other helper functions
-# Path setup is done after bundle_root is retrieved from widgets
 
 # COMMAND ----------
 
@@ -74,13 +69,6 @@ dbutils.widgets.text(
     label="Data Source URL",
 )
 
-# Bundle root
-dbutils.widgets.text(
-    "bundle_root",
-    "/Workspace/",
-    label="Root of bundle",
-)
-
 # COMMAND ----------
 
 # DBTITLE 1,Define input and output variables
@@ -88,17 +76,27 @@ uc_catalog = dbutils.widgets.get("uc_catalog")
 schema = dbutils.widgets.get("schema")
 raw_data_table = dbutils.widgets.get("raw_data_table")
 data_source_url = dbutils.widgets.get("data_source_url")
-bundle_root = dbutils.widgets.get("bundle_root")
 
 assert uc_catalog != "", "uc_catalog notebook parameter must be specified"
 assert schema != "", "schema notebook parameter must be specified"
 assert raw_data_table != "", "raw_data_table notebook parameter must be specified"
 assert data_source_url != "", "data_source_url notebook parameter must be specified"
-assert bundle_root != "", "bundle_root notebook parameter must be specified"
 
-# Updating to bundle root
+# COMMAND ----------
+
+# DBTITLE 1,Set up path to import utilities
+# Set up path to import utility and other helper functions
 import sys
-sys.path.append(bundle_root)
+import os
+
+# Get notebook's directory using dbutils
+notebook_path = '/Workspace/' + os.path.dirname(
+    dbutils.notebook.entry_point.getDbutils().notebook()
+    .getContext().notebookPath().get()
+)
+# Navigate up from notebooks/ to component level (data_ingestion/)
+utils_dir = os.path.dirname(notebook_path)
+sys.path.insert(0, utils_dir)
 
 # COMMAND ----------
 
@@ -110,7 +108,7 @@ spark.sql(f"""USE `{uc_catalog}`.`{schema}`""")
 # COMMAND ----------
 
 # DBTITLE 1,Download and store data to UC
-from data_preparation.data_ingestion.utils.fetch_data import fetch_data_from_url
+from utils.fetch_data import fetch_data_from_url
 
 if not spark.catalog.tableExists(f"{raw_data_table}") or spark.table(f"{raw_data_table}").isEmpty():
     # Download the data to a DataFrame 
@@ -124,4 +122,5 @@ if not spark.catalog.tableExists(f"{raw_data_table}") or spark.table(f"{raw_data
 
 # COMMAND ----------
 
+# DBTITLE 1,Exit notebook
 dbutils.notebook.exit(0)

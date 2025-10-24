@@ -5,7 +5,7 @@ bundle:
 variables:
   uc_catalog:
     description: Unity Catalog used to store data and artifacts.
-    default: ai_agent_stacks
+    default: scott_donohoo
   schema:
     description: "Schema in Unity Catalog."
   raw_data_table:
@@ -49,7 +49,7 @@ variables:
     default: "Small"
   app_name:
     description: "Name of the Databricks App"
-    default: "agentops-dev-chatbot-app"
+    default: "agentops-chatbot-app"
 
 include:
   # Resources folder contains Agent artifact resources for the Agent project that defines the agent
@@ -69,22 +69,22 @@ targets:
       schema: "agentops_dev"
     workspace:
       # TODO: add dev workspace URL
-      host: https://adb-984752964297111.11.azuredatabricks.net/
+      host: https://adb-2350455894922354.14.azuredatabricks.net/
 
   staging:
     variables:
       schema: "agentops_staging"
     workspace:
-      host: https://adb-xxxx.xx.azuredatabricks.net
+      host: https://adb-2350455894922354.14.azuredatabricks.net/
 
   prod:
     variables:
       schema: "agentops_prod"
     workspace:
-      host: https://adb-xxxx.xx.azuredatabricks.net
+      host: https://adb-2350455894922354.14.azuredatabricks.net/
 
   test: 
     variables:
       schema: "agentops_staging"
     workspace:
-      host: https://adb-xxxx.xx.azuredatabricks.net
+      host: https://adb-2350455894922354.14.azuredatabricks.net/

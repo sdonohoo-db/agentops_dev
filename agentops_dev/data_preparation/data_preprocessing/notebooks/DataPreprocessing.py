@@ -6,6 +6,7 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Data Preprocessing Pipeline - Overview
 ################################################################################### 
 # Data Preprocessing Pipeline
 #
@@ -14,15 +15,14 @@
 # ``agentops_dev/resources/data-preprocessing-workflow-resource.yml``
 #
 # Parameters:
-# * uc_catalog (required)                     - Name of the Unity Catalog 
-# * schema (required)                         - Name of the schema inside Unity Catalog 
+# * uc_catalog (required)                     - Name of the Unity Catalog
+# * schema (required)                         - Name of the schema inside Unity Catalog
 # * raw_data_table (required)                 - Name of the raw data table inside UC database
 # * preprocessed_data_table (required)        - Name of the preprocessed data table inside UC database
 # * hf_tokenizer_model (optional)             - Name of the HuggingFace tokenizer model name
 # * max_chunk_size (optional)                 - Maximum chunk size
 # * min_chunk_size (optional)                 - Minimum chunk size
-# * chunk_overlap (optional)                  - Overlap between chunks 
-# * bundle_root (required)                    - Root of the bundle
+# * chunk_overlap (optional)                  - Overlap between chunks
 #
 # Widgets:
 # * Unity Catalog: Text widget to input the name of the Unity Catalog
@@ -33,7 +33,6 @@
 # * Maximum chunk size: Maximum characters chunks will be split into
 # * Minimum chunk size: minimum characters chunks will be split into
 # * Chunk overlap: Overlap between chunks
-# * Root of bundle: Text widget to input the root of the bundle
 #
 # Usage:
 # 1. Set the appropriate values for the widgets.
@@ -43,16 +42,13 @@
 
 # COMMAND ----------
 
-# Install prerequisite pacakges
+# DBTITLE 1,Install Prerequisites
+# Install prerequisite packages
 %pip install -r ../../data_prep_requirements.txt
 
 # COMMAND ----------
 
-# Set up path to import utility and other helper functions
-# Path setup is done after bundle_root is retrieved from widgets
-
-# COMMAND ----------
-
+# DBTITLE 1,Widget Creation
 # List of input args needed to run this notebook as a job.
 # Provide them via DB widgets or notebook arguments.
 
@@ -81,13 +77,6 @@ dbutils.widgets.text(
     label="Preprocessed data table",
 )
 
-# Bundle root
-dbutils.widgets.text(
-    "bundle_root",
-    "/Workspace/",
-    label="Root of bundle",
-)
-
 # COMMAND ----------
 
 # DBTITLE 1,Define input and output variables
@@ -95,20 +84,32 @@ uc_catalog = dbutils.widgets.get("uc_catalog")
 schema = dbutils.widgets.get("schema")
 raw_data_table = dbutils.widgets.get("raw_data_table")
 preprocessed_data_table = dbutils.widgets.get("preprocessed_data_table")
-bundle_root = dbutils.widgets.get("bundle_root")
 
 assert uc_catalog != "", "uc_catalog notebook parameter must be specified"
 assert schema != "", "schema notebook parameter must be specified"
 assert raw_data_table != "", "raw_data_table notebook parameter must be specified"
 assert preprocessed_data_table != "", "preprocessed_data_table notebook parameter must be specified"
-assert bundle_root != "", "bundle_root notebook parameter must be specified"
 
-# Updating to bundle root
+# COMMAND ----------
+
+# DBTITLE 1,Set up path to import utility functions
 import sys
-sys.path.append(bundle_root)
+import os
 
+# Get notebook's directory using dbutils
+notebook_path = '/Workspace/' + os.path.dirname(
+    dbutils.notebook.entry_point.getDbutils().notebook()
+    .getContext().notebookPath().get()
+)
+# Navigate up from notebooks/ to component level
+utils_dir = os.path.dirname(notebook_path)
+sys.path.insert(0, utils_dir)
+
+# COMMAND ----------
+
+# DBTITLE 1,Import Chunking Configuration
 # Import chunking configuration constants
-from data_preparation.data_preprocessing.utils.config import (
+from utils.config import (
     MIN_CHUNK_SIZE,
     MAX_CHUNK_SIZE,
     CHUNK_OVERLAP,
@@ -159,7 +160,7 @@ if not spark.catalog.tableExists(f"{preprocessed_data_table}") or spark.table(f"
 from functools import partial
 import pandas as pd
 from pyspark.sql.functions import pandas_udf
-from data_preparation.data_preprocessing.utils.create_chunk import split_html_on_p
+from utils.create_chunk import split_html_on_p
 
 @pandas_udf("array<string>")
 def parse_and_split(
@@ -192,4 +193,5 @@ from pyspark.sql import functions as F
 
 # COMMAND ----------
 
+# DBTITLE 1,Exit notebook
 dbutils.notebook.exit(0)

@@ -1,32 +1,5 @@
 # You can find additional AI built-in functions starting at https://docs.databricks.com/aws/en/sql/language-manual/functions/ai_classify
 
-# execute_python_code
-def execute_python_code(code: str) -> str:
-    """
-    Executes the given python code and returns its stdout.
-    Remember the code should print the final result to stdout.
-
-    Args:
-      code: Python code to execute. Remember to print the final result to stdout.
-    """
-    import sys
-    from io import StringIO
-
-    stdout = StringIO()
-    sys.stdout = stdout
-    try: 
-        exec(code)
-        return stdout.getvalue()
-    except Exception as e:
-        if "Spark" in str(e): 
-            return f"Python code execution failed: {e}. Databricks specific code is not allowed." 
-        if "pyspark" in str(e):
-            return f"Python code execution failed: {e}. Databricks specific code is not allowed." 
-        if "dbutils" in str(e): 
-            return f"Python code execution failed: {e}. Databricks specific code is not allowed." 
-        else:
-            return f"Python code execution failed: {e}. Use simple code + try again."
-
 # AI function name
 ask_ai_function = """CREATE OR REPLACE FUNCTION {ask_ai_function_name}(question STRING COMMENT 'question to ask')
 RETURNS STRING
