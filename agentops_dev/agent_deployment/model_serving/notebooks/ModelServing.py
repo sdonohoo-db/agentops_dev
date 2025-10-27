@@ -154,18 +154,20 @@ from mlflow import MlflowClient
 client = MlflowClient()
 
 model_name = f"{uc_catalog}.{schema}.{registered_model}"
-model_version = client.get_model_version_by_alias(model_name, model_alias).version
+model_version = int(client.get_model_version_by_alias(model_name, model_alias).version)
 
-# Deploy the agent (only if not already deployed)
-if len(agents.get_deployments(model_name=model_name, model_version=int(model_version))) == 0:
+print(f"Deploying model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
+
+existing_deployments = agents.get_deployments(endpoint_name=agent_serving_endpoint)
+if len(existing_deployments) == 0:
     agents.deploy(
         model_name=model_name,
-        model_version=int(model_version),
+        model_version=model_version,
         endpoint_name=agent_serving_endpoint
     )
     print(f"Deployed model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
 else:
-    print(f"Model {model_name} version {model_version} already deployed")
+    print(f"A model is already deployed to endpoint {agent_serving_endpoint}. Skipping deployment.")
 
 # Set review instructions
 agents.set_review_instructions(model_name, instructions_to_reviewer)
