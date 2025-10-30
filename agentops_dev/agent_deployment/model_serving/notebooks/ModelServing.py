@@ -158,7 +158,7 @@ model_version = int(client.get_model_version_by_alias(model_name, model_alias).v
 
 print(f"Deploying model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
 
-existing_deployments = agents.get_deployments(endpoint_name=agent_serving_endpoint)
+existing_deployments = agents.get_deployments(model_name)
 if len(existing_deployments) == 0:
     agents.deploy(
         model_name=model_name,
