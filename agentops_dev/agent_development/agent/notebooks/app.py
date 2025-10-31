@@ -136,6 +136,7 @@ class LangGraphResponsesAgent(ResponsesAgent):
                     num_results=vector_search_config.get("num_results", 1),
                     columns=vector_search_config.get("columns", ["url", "content"]),
                     query_type=vector_search_config.get("query_type", "ANN"),
+                    filters={},  # Explicitly set empty filters to avoid default category/component filters
                 )
             )
 

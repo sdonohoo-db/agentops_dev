@@ -150,33 +150,24 @@ Thank you for your time and effort in testing our assistant. Your contributions 
 
 from databricks import agents
 from mlflow import MlflowClient
+from utils import wait_for_model_serving_endpoint_to_be_ready
 
 client = MlflowClient()
 
 model_name = f"{uc_catalog}.{schema}.{registered_model}"
 model_version = int(client.get_model_version_by_alias(model_name, model_alias).version)
 
-print(f"Deploying model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
-
-existing_deployments = agents.get_deployments(model_name)
-if len(existing_deployments) == 0:
-    agents.deploy(
-        model_name=model_name,
-        model_version=model_version,
-        endpoint_name=agent_serving_endpoint
-    )
-    print(f"Deployed model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
+if len(agents.get_deployments(model_name=model_name, model_version=model_version)) == 0:
+  print(f"Deploying model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
+  agents.deploy(model_name, model_version, endpoint_name=agent_serving_endpoint)
+  wait_for_model_serving_endpoint_to_be_ready(agent_serving_endpoint)
 else:
-    print(f"A model is already deployed to endpoint {agent_serving_endpoint}. Skipping deployment.")
-
-# Set review instructions
-agents.set_review_instructions(model_name, instructions_to_reviewer)
+  print(f"Model {model_name} version {model_version} is already deployed to endpoint {agent_serving_endpoint}. Skipping deployment.")
 
 # COMMAND ----------
-# DBTITLE 1,Wait for Endpoint to be Ready
+# DBTITLE 1,Set Review Instructions
 
-from utils import wait_for_model_serving_endpoint_to_be_ready
-wait_for_model_serving_endpoint_to_be_ready(agent_serving_endpoint)
+agents.set_review_instructions(model_name, instructions_to_reviewer)
 
 # COMMAND ----------
 
@@ -201,7 +192,7 @@ input_example = {
     "databricks_options": {"return_trace": True},
 }
 
-response = client.predict(endpoint=agent_serving_endpoint, inputs=input_example)
+response = client.predict(endpoint=f'/serving-endpoints/{agent_serving_endpoint}', inputs=input_example)
 
 print(response['output'])
 
