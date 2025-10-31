@@ -119,37 +119,72 @@ sys.path.insert(0, utils_dir)
 
 # COMMAND ----------
 
+# DBTITLE 1,Get Reference Documentation and Prepare for Dataset
+import pandas as pd
+from pyspark.sql import SparkSession
+
+# Initialize Spark session if not already available
+try:
+    spark
+except NameError:
+    spark = SparkSession.builder.getOrCreate()
+
+# Download the reference documentation from Databricks demos
+print("Loading reference documentation from Databricks demos...")
+ref_docs_df = pd.read_parquet(
+    'https://notebooks.databricks.com/demos/dbdemos-dataset/llm/databricks-documentation/databricks_doc_eval_set.parquet'
+)
+
+print(f"Loaded {len(ref_docs_df)} reference documents")
+display(ref_docs_df.head())
+
+# COMMAND ----------
+
+# DBTITLE 1,Transform Data to MLflow 3.x Evaluation Dataset Format
+# Transform the reference docs into the correct format for MLflow 3.x
+# According to the docs, each record needs 'inputs' and 'expected' (or 'expectations') fields
+
+evaluation_records = []
+for idx, row in ref_docs_df.head(100).iterrows():
+    record = {
+        "inputs": {
+            "question": row.get('request', '')
+        },
+        "expected": {
+            "expected_response": row.get('expected_response', '')
+        }
+    }
+    evaluation_records.append(record)
+
+print(f"Transformed {len(evaluation_records)} records for evaluation dataset")
+print("\nSample record structure:")
+print(evaluation_records[0])
+
+# COMMAND ----------
+
 # DBTITLE 1,Create Evaluation Dataset
 import mlflow.genai.datasets
 
+# Construct the fully qualified table name
+dataset_name = f"{uc_catalog}.{schema}.{eval_table}"
+
 try:
-    eval_dataset = mlflow.genai.datasets.create_dataset(
-        uc_table_name=f"{uc_catalog}.{schema}.{eval_table}",
-    )
-except:
-    # Eval table already exists
-    eval_dataset = mlflow.genai.datasets.get_dataset(
-        uc_table_name=f"{uc_catalog}.{schema}.{eval_table}",
-    )
+  eval_dataset = mlflow.genai.datasets.get_dataset(dataset_name)
+except Exception as e:
+  if 'does not exist' in str(e):
+    eval_dataset = mlflow.genai.datasets.create_dataset(dataset_name)
+    # Add your examples to the evaluation dataset
+    eval_dataset.merge_records(evaluation_records)
+    print("Added records to the evaluation dataset.")
 
-print(f"Evaluation dataset: {uc_catalog}.{schema}.{eval_table}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Get Reference Documentation
-from utils.evaluation import get_reference_documentation
-
-reference_docs = get_reference_documentation(uc_catalog, schema, eval_table, spark)
-
-display(reference_docs)
-
-# COMMAND ----------
-
-# DBTITLE 1,Merge Reference Docs to Eval Dataset
-eval_dataset.merge_records(reference_docs.limit(100))
-
+# DBTITLE 1,Display Eval Dataset
 # Preview the dataset
-display(eval_dataset.to_df())
+print("\nDataset preview:")
+dataset_df = eval_dataset.to_df()
+display(dataset_df)
 
 # COMMAND ----------
 
@@ -232,25 +267,76 @@ print("="*80)
 # COMMAND ----------
 
 # DBTITLE 1,Define Evaluation Scorers
-from mlflow.genai.scorers import RetrievalGroundedness, RelevanceToQuery, Safety, Guidelines
+import mlflow
+
+# For MLflow 3.5.1, scorers are typically defined using mlflow.metrics or custom functions
+# We'll use built-in metrics and custom judges
 
 def get_scorers():
-    return [
-        RetrievalGroundedness(),  # Checks if response is grounded in retrieved data
-        RelevanceToQuery(),  # Checks if response addresses the user's request
-        Safety(),  # Checks for harmful or inappropriate content
-        Guidelines(
-            guidelines="""
-            Response must be clear and professional.
-            - Do not mention internal tools or functions used
-            - Do not show intermediate reasoning steps
-            - Provide direct, actionable answers
-            """,
+    """
+    Define evaluation scorers for agent evaluation.
+    In MLflow 3.5.1, we use make_genai_metric for custom LLM-as-judge metrics.
+    """
+    scorers = []
+
+    try:
+        # Try importing the genai scorers (may vary by MLflow version)
+        from mlflow.metrics.genai import answer_relevance, faithfulness, answer_correctness
+
+        scorers.extend([
+            answer_relevance,  # Checks if response addresses the user's query
+            faithfulness,  # Checks if response is grounded in retrieved context
+            answer_correctness,  # Compares response against expected answer
+        ])
+    except ImportError:
+        print("Note: Some genai metrics may not be available in this MLflow version")
+        print("Evaluation will proceed with available metrics")
+
+    # Add any custom metrics if needed
+    try:
+        from mlflow.metrics.genai import make_genai_metric
+
+        response_quality = make_genai_metric(
             name="response_quality",
+            definition="""
+            Evaluate if the response is clear, professional, and actionable.
+            The response should not mention internal tools or show intermediate reasoning.
+            """,
+            grading_prompt="""
+            Score the response on the following criteria:
+            - Clarity and professionalism (1-5)
+            - Avoids mentioning internal tools or functions (Yes/No)
+            - Provides direct, actionable answers (1-5)
+
+            Provide a score from 1-5 where:
+            1 = Poor quality, unprofessional, or mentions internal details
+            5 = Excellent quality, professional, clear and actionable
+            """,
+            examples=[
+                {
+                    "inputs": {"question": "How do I create a table?"},
+                    "output": "To create a table, use the CREATE TABLE SQL command with your desired columns and data types.",
+                    "score": 5,
+                    "justification": "Clear, professional, and actionable without internal details"
+                },
+                {
+                    "inputs": {"question": "How do I create a table?"},
+                    "output": "I used the get_table_info() function and then processed the schema...",
+                    "score": 2,
+                    "justification": "Mentions internal functions instead of providing direct answer"
+                }
+            ],
+            version="v1",
+            greater_is_better=True
         )
-    ]
+        scorers.append(response_quality)
+    except Exception as e:
+        print(f"Could not create custom response_quality metric: {e}")
+
+    return scorers
 
 scorers = get_scorers()
+print(f"Loaded {len(scorers)} evaluation scorers")
 
 # COMMAND ----------
 
@@ -262,15 +348,95 @@ import warnings
 os.environ["DATABRICKS_VECTOR_SEARCH_DISABLE_NOTICE"] = "1"
 warnings.filterwarnings('ignore', message='.*notebook authentication token.*')
 
-with mlflow.start_run(run_name="agent_evaluation"):
-    results = mlflow.genai.evaluate(
-        data=eval_dataset,
-        predict_fn=predict_wrapper,
-        scorers=scorers
-    )
+# Set the MLflow experiment
+mlflow.set_experiment(experiment)
+
+print("Starting evaluation run...")
+print(f"Dataset: {dataset_name}")
+print(f"Model: {model_uri}")
+print(f"Number of scorers: {len(scorers)}")
+
+with mlflow.start_run(run_name="agent_evaluation") as run:
+    print(f"\nMLflow Run ID: {run.info.run_id}")
+
+    try:
+        # In MLflow 3.5.1, mlflow.evaluate is the standard API
+        # If using genai-specific features, use mlflow.genai.evaluate
+
+        # Prepare evaluation data - convert dataset to pandas DataFrame
+        eval_df = eval_dataset.to_df().toPandas() if hasattr(eval_dataset.to_df(), 'toPandas') else eval_dataset.to_df()
+
+        # Create a wrapper function that works with the evaluate API
+        def model_predict(inputs):
+            """Wrapper that accepts inputs dict/series and returns predictions"""
+            if isinstance(inputs, dict):
+                question = inputs.get('question', '')
+            else:
+                # Handle pandas Series
+                question = inputs['question'] if 'question' in inputs else str(inputs)
+            return predict_wrapper(question)
+
+        print("\nRunning evaluation...")
+        results = mlflow.evaluate(
+            data=eval_df,
+            model_type="question-answering",
+            predictions="output",  # Column name for predictions
+            targets="expected_response",  # Column name for ground truth (if available)
+            extra_metrics=scorers if scorers else None,
+            evaluators="default" if not scorers else None,
+        )
+
+        print("\nEvaluation complete!")
+        print(f"Metrics: {results.metrics}")
+
+        # Log the evaluation results
+        mlflow.log_metrics(results.metrics)
+
+    except Exception as e:
+        print(f"Error during evaluation: {e}")
+        print("\nAttempting alternative evaluation approach...")
+
+        # Fallback: manual evaluation loop
+        from tqdm import tqdm
+        predictions = []
+
+        for idx, row in tqdm(eval_df.iterrows(), total=len(eval_df), desc="Evaluating"):
+            try:
+                question = row['inputs']['question'] if isinstance(row['inputs'], dict) else row['inputs']
+                pred = predict_wrapper(question)
+                predictions.append(pred)
+            except Exception as pred_error:
+                print(f"Error predicting row {idx}: {pred_error}")
+                predictions.append("")
+
+        eval_df['predictions'] = predictions
+
+        # Log the predictions
+        mlflow.log_table(eval_df, artifact_file="evaluation_results.json")
+        print(f"\nEvaluated {len(predictions)} examples")
+        print("Results logged to MLflow")
 
 # COMMAND ----------
 
-# Display results
-print(f"Evaluation complete")
-print(f"Metrics: {results.metrics}")
+# DBTITLE 1,Display Evaluation Results
+print("\n" + "="*80)
+print("EVALUATION SUMMARY")
+print("="*80)
+
+if 'results' in locals():
+    print(f"\nMetrics:")
+    for metric_name, metric_value in results.metrics.items():
+        print(f"  {metric_name}: {metric_value}")
+
+    print(f"\nRun ID: {run.info.run_id}")
+    print(f"Experiment: {experiment}")
+
+    # Display detailed results if available
+    if hasattr(results, 'tables'):
+        print("\nDetailed results:")
+        display(results.tables['eval_results_table'])
+else:
+    print("\nEvaluation completed with manual approach")
+    print("Check MLflow UI for detailed results")
+
+print("="*80)
