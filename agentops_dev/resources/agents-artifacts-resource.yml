@@ -36,7 +36,6 @@ resources:
   model_serving_endpoints:
     agent_serving_endpoint:
       name: ${var.agent_serving_endpoint}
-      route_optimized: true
       permissions:
         - level: CAN_QUERY
           group_name: users
