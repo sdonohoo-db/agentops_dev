@@ -1,0 +1,11 @@
+resources:
+  apps:
+    agentops_chatbot:
+      name: ${var.app_name}-${bundle.target}
+      description: "AgentOps Chatbot Databricks App - ${bundle.target} environment"
+      # Local path within the bundle (copied to workspace on bundle deploy)
+      source_code_path: ../agent_deployment/chat_interface_deployment
+      # Optional: Add permissions if needed
+      # permissions:
+      #   - level: CAN_USE
+      #     group_name: users
