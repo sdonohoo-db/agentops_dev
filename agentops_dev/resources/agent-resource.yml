@@ -51,8 +51,13 @@ resources:
               schema: ${var.schema}
               registered_model: ${var.registered_model}
               model_alias: ${var.model_alias}
+              agent_serving_endpoint: ${var.agent_serving_endpoint}
               scale_to_zero: ${var.scale_to_zero}
               workload_size: ${var.workload_size}
+              # Improved deployment parameters
+              mlflow_experiment_path: ${var.mlflow_experiment_path}
+              deploy_max_attempts: ${var.deploy_max_attempts}
+              deploy_base_sleep_sec: ${var.deploy_base_sleep_sec}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
           #environment_key: agent_requirements

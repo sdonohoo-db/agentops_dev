@@ -9,7 +9,7 @@
 # DBTITLE 1,Model Serving Pipeline - Overview
 ##################################################################################
 # Model Serving
-# 
+#
 # Helper notebook to serve the model on an endpoint. This notebook is run
 # after the ModelDeployment.py notebook as part of a multi-task job, in order to serve the model
 # on an endpoint stage after transitioning the latest version.
@@ -23,6 +23,9 @@
 # * workload_size (required)                - Specify  the size of the compute scale out that corresponds with the number of requests this served
 #                                             model can process at the same time. This number should be roughly equal to QPS x model run time.
 # * agent_serving_endpoint (required)       - Name of the agent serving endpoint to deploy
+# * mlflow_experiment_path (optional)       - Non-Git MLflow experiment path for tracing
+# * deploy_max_attempts (optional)          - Maximum deployment retry attempts (default: 3)
+# * deploy_base_sleep_sec (optional)        - Base sleep time for retry backoff (default: 10)
 #
 # Widgets:
 # * Unity Catalog: Text widget to input the name of the Unity Catalog
@@ -80,11 +83,31 @@ dbutils.widgets.text(
 dbutils.widgets.dropdown("scale_to_zero", "True", ["True", "False"], "Scale to zero")
 # Workdload size
 dbutils.widgets.dropdown("workload_size", "Small", ["Small", "Medium", "Large"], "Workload Size")
-# Agent serving endpoint
+# Agent serving endpoint (optional - leave empty to auto-generate)
+# Per Databricks guidance: agents.deploy() can create the endpoint with a custom name,
+# but the endpoint must NOT be pre-created in DAB/Terraform
+# Pass a name for cleaner endpoint management, or leave empty to auto-generate
 dbutils.widgets.text(
     "agent_serving_endpoint",
     "chatbot_model_serving_endpoint",
-    label="Agent serving endpoint",
+    label="Agent serving endpoint (optional)",
+)
+# MLflow experiment path (optional)
+dbutils.widgets.text(
+    "mlflow_experiment_path",
+    "",
+    label="MLflow Experiment Path (optional)",
+)
+# Deployment retry settings
+dbutils.widgets.text(
+    "deploy_max_attempts",
+    "3",
+    label="Max deployment attempts",
+)
+dbutils.widgets.text(
+    "deploy_base_sleep_sec",
+    "10",
+    label="Base sleep seconds for retry",
 )
 
 # COMMAND ----------
@@ -95,21 +118,61 @@ dbutils.library.restartPython()
 # COMMAND ----------
 
 # DBTITLE 1,Define Input Variables
+import time
+from typing import Optional
+
+def get_bool_param(value: str) -> bool:
+    """Convert string widget value to boolean"""
+    return str(value).lower() in ("1", "true", "yes", "y")
+
+def get_int_param(value: str, default: int) -> int:
+    """Convert string widget value to int with default"""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+def get_float_param(value: str, default: float) -> float:
+    """Convert string widget value to float with default"""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
 uc_catalog = dbutils.widgets.get("uc_catalog")
 schema = dbutils.widgets.get("schema")
 registered_model = dbutils.widgets.get("registered_model")
 model_alias = dbutils.widgets.get("model_alias")
-scale_to_zero = bool(dbutils.widgets.get("scale_to_zero"))
+scale_to_zero = get_bool_param(dbutils.widgets.get("scale_to_zero"))
 workload_size = dbutils.widgets.get("workload_size")
-agent_serving_endpoint = dbutils.widgets.get("agent_serving_endpoint")
+agent_serving_endpoint = dbutils.widgets.get("agent_serving_endpoint")  # Optional - can be empty
+mlflow_experiment_path = dbutils.widgets.get("mlflow_experiment_path")
+deploy_max_attempts = get_int_param(dbutils.widgets.get("deploy_max_attempts"), 3)
+deploy_base_sleep_sec = get_float_param(dbutils.widgets.get("deploy_base_sleep_sec"), 10.0)
 
 assert uc_catalog != "", "uc_catalog notebook parameter must be specified"
 assert schema != "", "schema notebook parameter must be specified"
 assert registered_model != "", "registered_model notebook parameter must be specified"
 assert model_alias != "", "model_alias notebook parameter must be specified"
-assert scale_to_zero != "", "scale_to_zero notebook parameter must be specified"
-assert workload_size != "", "workload_size notebook parameter must be specified"
-assert agent_serving_endpoint != "", "agent_serving_endpoint notebook parameter must be specified"
+# Note: agent_serving_endpoint is optional - if empty, agents.deploy() will auto-generate it
+
+# COMMAND ----------
+
+# DBTITLE 1,Configure MLflow for UC and Real-time Tracing
+import mlflow
+from databricks.sdk import WorkspaceClient
+
+# Critical: Set UC registry and non-Git experiment before calling agents.deploy()
+# This ensures MLflow 3 real-time tracing works in Git folders and bundle jobs
+mlflow.set_registry_uri("databricks-uc")
+
+# Use provided experiment path or create a default non-Git experiment
+w = WorkspaceClient()
+if not mlflow_experiment_path:
+    mlflow_experiment_path = f"/Users/{w.current_user.me().user_name}/.agents-deploy-exp"
+
+mlflow.set_experiment(mlflow_experiment_path)
+print(f"Using MLflow experiment: {mlflow_experiment_path}")
 
 # COMMAND ----------
 
@@ -146,28 +209,92 @@ Your inputs are invaluable for the development team. By providing detailed feedb
 Thank you for your time and effort in testing our assistant. Your contributions are essential to delivering a high-quality product to our end users."""
 
 # COMMAND ----------
-# DBTITLE 1,Deploy Agent
+# DBTITLE 1,Deploy Agent with Retry Logic
 
 from databricks import agents
 from mlflow import MlflowClient
-from utils import wait_for_model_serving_endpoint_to_be_ready
 
 client = MlflowClient()
 
 model_name = f"{uc_catalog}.{schema}.{registered_model}"
-model_version = int(client.get_model_version_by_alias(model_name, model_alias).version)
+model_version_obj = client.get_model_version_by_alias(model_name, model_alias)
+model_version = int(model_version_obj.version)
 
-if len(agents.get_deployments(model_name=model_name, model_version=model_version)) == 0:
-  print(f"Deploying model {model_name} version {model_version} to endpoint {agent_serving_endpoint}")
-  agents.deploy(model_name, model_version, endpoint_name=agent_serving_endpoint)
-  wait_for_model_serving_endpoint_to_be_ready(agent_serving_endpoint)
+print(f"Deploying model {model_name} version {model_version}")
+print(f"Scale to zero: {scale_to_zero}, Workload size: {workload_size}")
+if agent_serving_endpoint:
+    print(f"Target endpoint name: {agent_serving_endpoint}")
 else:
-  print(f"Model {model_name} version {model_version} is already deployed to endpoint {agent_serving_endpoint}. Skipping deployment.")
+    print("No endpoint name specified - agents.deploy() will auto-generate one")
+
+# Deploy with retry/backoff to handle intermittent failures
+# This is critical because agents.deploy() can have transient issues during
+# endpoint creation/update, especially when reading endpoint state
+last_err = None
+deployment = None
+
+for attempt in range(1, deploy_max_attempts + 1):
+    try:
+        print(f"Deployment attempt {attempt}/{deploy_max_attempts}...")
+
+        # CRITICAL: Let agents.deploy() own endpoint creation completely
+        # - You CAN pass endpoint_name for cleaner naming (recommended)
+        # - You must NOT pre-create the endpoint in DAB/Terraform
+        # - If endpoint_name is empty/None, agents.deploy() will auto-generate it
+        # See: https://docs.databricks.com/en/generative-ai/deploy-agent.html
+        deployment = agents.deploy(
+            model_name=model_name,
+            model_version=model_version,
+            endpoint_name=agent_serving_endpoint if agent_serving_endpoint else None,
+            scale_to_zero_enabled=scale_to_zero,
+        )
+
+        print(f"Deployment initiated successfully!")
+        print(f"Query endpoint: {deployment.query_endpoint}")
+        last_err = None
+        break
+
+    except Exception as e:
+        last_err = e
+        error_msg = str(e)
+
+        # Check for the known "served_entities" error
+        if "served_entities" in error_msg.lower() or "nonetype" in error_msg.lower():
+            print(f"Encountered known intermittent deployment issue: {error_msg}")
+        else:
+            print(f"Deployment error: {error_msg}")
+
+        if attempt < deploy_max_attempts:
+            sleep_for = deploy_base_sleep_sec * (2 ** (attempt - 1))
+            print(f"Retrying in {sleep_for:.0f} seconds...")
+            time.sleep(sleep_for)
+        else:
+            print(f"Deployment failed after {deploy_max_attempts} attempts")
+
+if last_err:
+    raise RuntimeError(
+        f"Deployment failed after {deploy_max_attempts} attempts. "
+        f"Last error: {last_err}"
+    ) from last_err
+
+# COMMAND ----------
+# DBTITLE 1,Wait for Endpoint to be Ready
+
+from utils import wait_for_model_serving_endpoint_to_be_ready
+
+# Extract the endpoint name from the deployment object
+# Since we didn't pass endpoint_name, agents.deploy() auto-generated it
+endpoint_name = deployment.endpoint_name
+print(f"Deployment created endpoint: {endpoint_name}")
+print(f"Waiting for endpoint {endpoint_name} to be ready...")
+wait_for_model_serving_endpoint_to_be_ready(endpoint_name)
+print(f"Endpoint {endpoint_name} is ready!")
 
 # COMMAND ----------
 # DBTITLE 1,Set Review Instructions
 
 agents.set_review_instructions(model_name, instructions_to_reviewer)
+print("Review instructions set successfully")
 
 # COMMAND ----------
 
@@ -179,20 +306,21 @@ agents.set_review_instructions(model_name, instructions_to_reviewer)
 
 # agents.set_permissions(model_name=model_name, users=user_list, permission_level=agents.PermissionLevel.CAN_QUERY)
 
-# print(f"Share this URL with your stakeholders: {deployment_info.review_app_url}")
+# print(f"Share this URL with your stakeholders: {deployment.review_app_url}")
 
 # COMMAND ----------
 # DBTITLE 1,Test Endpoint
 
 from mlflow.deployments import get_deploy_client
 
-client = get_deploy_client()
+deploy_client = get_deploy_client()
 input_example = {
     "input": [{"role": "user", "content": "What is MLflow?"}],
     "databricks_options": {"return_trace": True},
 }
 
-response = client.predict(endpoint=f'/serving-endpoints/{agent_serving_endpoint}', inputs=input_example)
+print(f"Testing endpoint {endpoint_name}...")
+response = deploy_client.predict(endpoint=f'/serving-endpoints/{endpoint_name}', inputs=input_example)
 
+print("Test response:")
 print(response['output'])
-

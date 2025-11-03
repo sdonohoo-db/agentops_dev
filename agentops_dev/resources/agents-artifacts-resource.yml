@@ -33,16 +33,13 @@ resources:
       name: ${var.experiment}
       <<: *permissions
 
-  model_serving_endpoints:
-    agent_serving_endpoint:
-      name: ${var.agent_serving_endpoint}
-      permissions:
-        - level: CAN_QUERY
-          group_name: users
+  # NOTE: Model serving endpoint is NOT pre-created here
+  # Following Databricks guidance: let agents.deploy() create and manage the endpoint
+  # to avoid "AttributeError: 'NoneType' object has no attribute 'served_entities'"
+  # See: https://docs.databricks.com/en/generative-ai/deploy-agent.html
+  #
+  # The endpoint will be created by agents.deploy() in the AgentDeployment notebook
+  # Permissions are set via agents.set_permissions() after deployment
 
-
-  apps:
-    dash-chatbot-app:
-      name: ${var.app_name}
-      source_code_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}/files/agent_deployment/chat_interface_deployment/
-      description: 'your Databricks assistant app.'
+  # NOTE: App definition has been moved to resources/app-resource.yml
+  # The old dash-chatbot-app definition here is deprecated

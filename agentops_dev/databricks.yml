@@ -30,8 +30,8 @@ variables:
     description: "Name of agent model to register."
     default: agent_function_chatbot
   agent_serving_endpoint:
-    description: "Name of agent model serving endpoint."
-    default: chatbot_model_serving_endpoint
+    description: "Name of agent model serving endpoint (optional). If empty, agents.deploy() will auto-generate. Must NOT be pre-created in bundle."
+    default: ""  # Will be constructed per target below
   foundation_model_endpoint:
     description: "Foundation model endpoint to use for agent."
     default: "databricks-meta-llama-3-3-70b-instruct"
@@ -50,6 +50,24 @@ variables:
   app_name:
     description: "Name of the Databricks App"
     default: "agentops-chatbot-app"
+  # Agent deployment reliability settings
+  mlflow_experiment_path:
+    description: "Non-Git MLflow experiment path for agent tracing"
+    default: ""  # Will auto-generate if not specified
+  deploy_max_attempts:
+    description: "Maximum agent deployment retry attempts"
+    default: 3
+  deploy_base_sleep_sec:
+    description: "Base sleep seconds for deployment retry backoff"
+    default: 10
+
+sync:
+  # Sync app deployment files to workspace for CLI-based deployment
+  include:
+    - agent_deployment/chat_interface_deployment/app.py
+    - agent_deployment/chat_interface_deployment/DatabricksChatbot.py
+    - agent_deployment/chat_interface_deployment/utils.py
+    - agent_deployment/chat_interface_deployment/app.yaml
 
 include:
   # Resources folder contains Agent artifact resources for the Agent project that defines the agent
@@ -57,7 +75,7 @@ include:
   - ./resources/data-preparation-resource.yml
   - ./resources/agents-artifacts-resource.yml
   - ./resources/agent-resource.yml
-  - ./resources/app-deployment-resource.yml
+  - ./resources/app-resource.yml  # App resource (deploy with bundle deploy)
   # Uncomment this when you want to deploy monitoring
   # - ./resources/monitoring-resource.yml
 
@@ -67,24 +85,28 @@ targets:
     default: true
     variables:
       schema: "agentops_dev"
+      agent_serving_endpoint: "agentops-dev-chatbot-endpoint"
     workspace:
       # TODO: add dev workspace URL
-      host: https://adb-2350455894922354.14.azuredatabricks.net/
+      host: https://adb-4077249447582192.12.azuredatabricks.net/
 
   staging:
     variables:
       schema: "agentops_staging"
+      agent_serving_endpoint: "agentops-staging-chatbot-endpoint"
     workspace:
-      host: https://adb-2350455894922354.14.azuredatabricks.net/
+      host: https://adb-4077249447582192.12.azuredatabricks.net/
 
   prod:
     variables:
       schema: "agentops_prod"
+      agent_serving_endpoint: "agentops-prod-chatbot-endpoint"
     workspace:
-      host: https://adb-2350455894922354.14.azuredatabricks.net/
+      host: https://adb-4077249447582192.12.azuredatabricks.net/
 
-  test: 
+  test:
     variables:
       schema: "agentops_staging"
+      agent_serving_endpoint: "agentops-test-chatbot-endpoint"
     workspace:
-      host: https://adb-2350455894922354.14.azuredatabricks.net/
+      host: https://adb-4077249447582192.12.azuredatabricks.net/
